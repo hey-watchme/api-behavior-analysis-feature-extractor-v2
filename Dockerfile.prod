@@ -22,6 +22,7 @@ COPY main_supabase.py main.py
 COPY main_timeline.py .
 COPY analyze_s3_audio.py .
 COPY analyze_s3_timeline.py .
+COPY event_filter_config.py .
 
 # Python環境変数の設定
 ENV PYTHONPATH=/app

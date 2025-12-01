@@ -30,6 +30,9 @@ from botocore.exceptions import ClientError
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
+# Event filtering
+from event_filter_config import apply_event_filter, get_filter_stats
+
 # 環境変数を読み込み
 load_dotenv()
 
@@ -279,14 +282,14 @@ def process_audio(audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
 def predict_audio_events(audio_data: np.ndarray, top_k: int = 5, threshold: float = 0.1) -> List[Dict]:
     """
     音声データから音響イベントを予測
-    
+
     Args:
         audio_data: 前処理済みの音声データ
         top_k: 返す上位予測の数
         threshold: 最小確率しきい値
-    
+
     Returns:
-        予測結果のリスト
+        予測結果のリスト（フィルタリング・ラベル統合適用済み）
     """
     # 特徴抽出
     inputs = feature_extractor(
@@ -294,22 +297,22 @@ def predict_audio_events(audio_data: np.ndarray, top_k: int = 5, threshold: floa
         sampling_rate=feature_extractor.sampling_rate,
         return_tensors="pt"
     )
-    
+
     # デバイスに移動
     device = next(model.parameters()).device
     inputs = {k: v.to(device) for k, v in inputs.items()}
-    
+
     # 推論実行
     with torch.no_grad():
         outputs = model(**inputs)
         logits = outputs.logits
-    
+
     # Softmaxで確率に変換
     probs = torch.nn.functional.softmax(logits, dim=-1)[0]
-    
+
     # 上位k個を取得
     top_probs, top_indices = torch.topk(probs, min(top_k, len(probs)))
-    
+
     # 結果を整形
     predictions = []
     for prob, idx in zip(top_probs.cpu(), top_indices.cpu()):
@@ -321,8 +324,11 @@ def predict_audio_events(audio_data: np.ndarray, top_k: int = 5, threshold: floa
                 "label": label,
                 "score": round(score, 4)
             })
-    
-    return predictions
+
+    # Apply blacklist filtering and label merging
+    filtered_predictions = apply_event_filter(predictions)
+
+    return filtered_predictions
 
 def analyze_timeline(audio_data: np.ndarray, sample_rate: int, 
                     segment_duration: float = 1.0, 
@@ -514,12 +520,19 @@ async def root():
 @app.get("/health")
 async def health_check():
     """ヘルスチェックエンドポイント"""
+    filter_stats = get_filter_stats()
     return {
         "status": "healthy" if model is not None else "unhealthy",
         "model_loaded": model is not None,
         "supabase_connected": supabase is not None,
-        "s3_connected": s3_client is not None
+        "s3_connected": s3_client is not None,
+        "event_filtering": filter_stats
     }
+
+@app.get("/filter-config")
+async def get_filter_config():
+    """Get current event filtering configuration"""
+    return get_filter_stats()
 
 @app.post("/fetch-and-process-paths")
 async def fetch_and_process_paths(request: FetchAndProcessPathsRequest):
