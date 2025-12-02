@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-AST (Audio Spectrogram Transformer) 音響イベント検出API - Supabase統合版
-file_pathsベースの処理でaudio_filesテーブルと連携
+AST (Audio Spectrogram Transformer) Sound Event Detection API - Supabase Integration
+file_paths-based processing with audio_files table integration
+
+Model: MIT/ast-finetuned-audioset-10-10-0.4593
+Sampling Rate: 16kHz
+Library: transformers (Hugging Face)
 """
 
 import os
@@ -24,25 +28,27 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 
-# AWS S3とSupabase
+# AWS S3 and Supabase
 import boto3
 from botocore.exceptions import ClientError
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
+# Load environment variables
+load_dotenv()
+
 # Event filtering
 from event_filter_config import apply_event_filter, get_filter_stats
 
-# 環境変数を読み込み
-load_dotenv()
-
-# グローバル変数でモデルを保持
+# Global variables for model
 model = None
 feature_extractor = None
 id2label = None
 
-# モデル名
+# Model information
 MODEL_NAME = "MIT/ast-finetuned-audioset-10-10-0.4593"
+MODEL_DESCRIPTION = "Audio Spectrogram Transformer - AudioSet (mAP: 0.459)"
+SAMPLING_RATE = 16000
 
 # Supabaseクライアントの初期化
 supabase_url = os.getenv('SUPABASE_URL')
@@ -58,7 +64,7 @@ print(f"✅ Supabase接続設定完了: {supabase_url}")
 aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
 aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
 s3_bucket_name = os.getenv('S3_BUCKET_NAME', 'watchme-vault')
-aws_region = os.getenv('AWS_REGION', 'us-east-1')
+aws_region = os.getenv('AWS_REGION', 'ap-southeast-2')
 
 if not aws_access_key_id or not aws_secret_access_key:
     raise ValueError("AWS_ACCESS_KEY_IDおよびAWS_SECRET_ACCESS_KEYが設定されていません")
@@ -71,11 +77,11 @@ s3_client = boto3.client(
 )
 print(f"✅ AWS S3接続設定完了: バケット={s3_bucket_name}, リージョン={aws_region}")
 
-# FastAPIアプリケーション
+# FastAPI application
 app = FastAPI(
     title="AST Audio Event Detection API with Supabase",
-    description="Audio Spectrogram Transformer を使用した音響イベント検出API（Supabase統合版）",
-    version="2.0.0"
+    description="Audio Spectrogram Transformer for sound event detection (Supabase integration) - v3",
+    version="3.0.0"
 )
 
 # CORSミドルウェアの設定
@@ -92,70 +98,65 @@ class FetchAndProcessPathsRequest(BaseModel):
     file_paths: List[str]
     threshold: Optional[float] = 0.1
     top_k: Optional[int] = 3
-    analyze_timeline: Optional[bool] = True  # タイムライン分析を実行するか
-    segment_duration: Optional[float] = 10.0  # セグメントの長さ（秒）- 10秒が最適
-    overlap: Optional[float] = 0.0  # オーバーラップ率 - オーバーラップなしが最適
+    analyze_timeline: Optional[bool] = True
+    segment_duration: Optional[float] = 10.0  # 10秒が最適
+    overlap: Optional[float] = 0.0  # オーバーラップなしが最適
 
 def load_model():
-    """モデルとfeature extractorを読み込む"""
+    """Load AST model and feature extractor"""
     global model, feature_extractor, id2label
-    
-    print(f"🔄 モデルをロード中: {MODEL_NAME}")
+
+    print(f"🔄 Loading model: {MODEL_NAME}")
     try:
         feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
         model = ASTForAudioClassification.from_pretrained(MODEL_NAME)
-        
-        # ラベルマッピングを取得
+
+        # Get label mapping
         id2label = model.config.id2label
-        
-        # CPUで実行
+
+        # Set device
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model.to(device)
         model.eval()
-        
-        print(f"✅ モデルのロードに成功しました")
-        print(f"   - デバイス: {device}")
-        print(f"   - ラベル数: {len(id2label)}")
-        
+
+        print(f"✅ Model loaded successfully")
+        print(f"   - Model: {MODEL_NAME}")
+        print(f"   - Device: {device}")
+        print(f"   - Classes: {len(id2label)} (AudioSet)")
+        print(f"   - Sampling Rate: {SAMPLING_RATE} Hz (16kHz)")
+        print(f"   - Performance: mAP 0.459 (AudioSet)")
+
     except Exception as e:
-        print(f"❌ モデルのロードに失敗しました: {str(e)}")
+        print(f"❌ Failed to load model: {str(e)}")
+        traceback.print_exc()
         raise
 
 def extract_info_from_file_path(file_path: str) -> Dict[str, str]:
     """
     ファイルパスからデバイスID、日付、時間ブロックを抽出
-    
+
     Args:
         file_path: S3ファイルパス (例: files/device-id/2025-07-20/14-30/audio.wav)
-    
+
     Returns:
         device_id, date, time_block を含む辞書
     """
     parts = file_path.split('/')
-    
-    if len(parts) >= 5:
+
+    if len(parts) >= 2:
         device_id = parts[1]
-        date = parts[2]
-        time_block_raw = parts[3]  # e.g., "13-31-01"
-        # Convert HH-MM-SS to HH-MM format for database constraint
-        time_block = time_block_raw[:5]  # e.g., "13-31"
         return {
-            'device_id': device_id,
-            'date': date,
-            'time_block': time_block
+            'device_id': device_id
         }
     else:
-        # パスが期待する形式でない場合
         return {
-            'device_id': 'unknown',
-            'date': 'unknown',
-            'time_block': 'unknown'
+            'device_id': 'unknown'
         }
 
 async def update_audio_files_status(file_path: str, status: str = 'completed'):
     """
-    audio_filesテーブルのbehavior_features_statusを更新（YamNetと同じフィールドを使用）
-    
+    audio_filesテーブルのbehavior_features_statusを更新
+
     Args:
         file_path: ファイルパス
         status: ステータス ('pending', 'processing', 'completed', 'error')
@@ -165,71 +166,77 @@ async def update_audio_files_status(file_path: str, status: str = 'completed'):
             .update({'behavior_features_status': status}) \
             .eq('file_path', file_path) \
             .execute()
-        
+
         if update_response.data:
             print(f"✅ ステータス更新成功: {file_path} -> {status}")
             return True
         else:
             print(f"⚠️ 対象レコードが見つかりません: {file_path}")
             return False
-            
+
     except Exception as e:
         print(f"❌ ステータス更新エラー: {str(e)}")
         return False
 
-async def save_to_behavior_yamnet(device_id: str, date: str, time_block: str, 
-                                  timeline_data: List[Dict]):
+async def save_to_spot_features(device_id: str, recorded_at: str,
+                                 timeline_data: List[Dict]):
     """
-    behavior_yamnetテーブルにタイムライン形式の結果を保存
-    
+    spot_featuresテーブルにタイムライン形式の結果を保存
+
     Args:
         device_id: デバイスID
-        date: 日付
-        time_block: 時間ブロック
+        recorded_at: 録音日時 (UTC timestamp)
         timeline_data: タイムライン形式のイベントデータ
     """
     try:
-        # 現在のUTCタイムスタンプを取得
-        created_at = datetime.now(timezone.utc).isoformat()
-        
-        # タイムライン形式のデータをeventsカラムに保存
+        processed_at = datetime.now(timezone.utc).isoformat()
+
+        # Get local_date and local_time from audio_files table
+        local_date = None
+        local_time = None
+        try:
+            audio_file_response = supabase.table('audio_files').select('local_date, local_time').eq(
+                'device_id', device_id
+            ).eq(
+                'recorded_at', recorded_at
+            ).execute()
+
+            if audio_file_response.data and len(audio_file_response.data) > 0:
+                local_date = audio_file_response.data[0].get('local_date')
+                local_time = audio_file_response.data[0].get('local_time')
+                print(f"Retrieved local_date from audio_files: {local_date}")
+                print(f"Retrieved local_time from audio_files: {local_time}")
+            else:
+                print(f"⚠️ No audio_files record found for device_id={device_id}, recorded_at={recorded_at}")
+        except Exception as e:
+            print(f"❌ Error fetching local_date/local_time from audio_files: {e}")
+
         data = {
             'device_id': device_id,
-            'date': date,
-            'time_block': time_block,
-            'events': timeline_data,  # タイムライン形式のデータ
-            'status': 'completed',  # ASTによる処理完了
-            'created_at': created_at  # タイムスタンプを追加
+            'recorded_at': recorded_at,
+            'local_date': local_date,  # Local date from audio_files
+            'local_time': local_time,  # Local time from audio_files
+            'behavior_extractor_result': timeline_data  # JSONB形式
         }
-        
-        # upsert（既存データがあれば更新、なければ挿入）
-        response = supabase.table('behavior_yamnet') \
-            .upsert(data, on_conflict='device_id,date,time_block') \
+
+        response = supabase.table('spot_features') \
+            .upsert(data) \
             .execute()
-        
+
         if response.data:
-            print(f"✅ データ保存成功: {device_id}/{date}/{time_block}")
+            print(f"✅ spot_features保存成功: {device_id}/{recorded_at}")
             return True
         else:
             print(f"⚠️ データ保存失敗: レスポンスが空です")
             return False
-            
+
     except Exception as e:
         print(f"❌ データ保存エラー: {str(e)}")
         traceback.print_exc()
         return False
 
 def download_from_s3(file_path: str, local_path: str) -> bool:
-    """
-    S3から音声ファイルをダウンロード
-    
-    Args:
-        file_path: S3のファイルパス
-        local_path: ローカル保存先パス
-    
-    Returns:
-        成功時True、失敗時False
-    """
+    """S3から音声ファイルをダウンロード"""
     try:
         print(f"📥 S3からダウンロード中: {file_path}")
         s3_client.download_file(s3_bucket_name, file_path, local_path)
@@ -248,78 +255,79 @@ def download_from_s3(file_path: str, local_path: str) -> bool:
 
 def process_audio(audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
     """
-    音声データを前処理する
-    
+    Preprocess audio data for AST model
+
     Args:
-        audio_data: 音声データ（numpy配列）
-        sample_rate: サンプリングレート
-    
+        audio_data: Audio data (numpy array)
+        sample_rate: Original sampling rate
+
     Returns:
-        処理済みの音声データ
+        Processed audio data
     """
-    # モノラルに変換
+    # Convert to mono
     if len(audio_data.shape) > 1:
         audio_data = np.mean(audio_data, axis=1)
-    
-    # モデルが期待するサンプリングレートにリサンプリング（16kHz）
+
+    # Resample to model's expected sampling rate (16kHz)
     target_sr = feature_extractor.sampling_rate
     if sample_rate != target_sr:
         audio_data = librosa.resample(
-            audio_data, 
-            orig_sr=sample_rate, 
+            audio_data,
+            orig_sr=sample_rate,
             target_sr=target_sr
         )
-    
-    # float32に変換
+
+    # Convert to float32
     if audio_data.dtype != np.float32:
         audio_data = audio_data.astype(np.float32)
-    
-    # 正規化（-1.0 〜 1.0）
+
+    # Normalize (-1.0 to 1.0)
     max_val = np.max(np.abs(audio_data))
     if max_val > 0:
         audio_data = audio_data / max_val
-    
+
     return audio_data
 
-def predict_audio_events(audio_data: np.ndarray, top_k: int = 5, threshold: float = 0.1) -> List[Dict]:
+def predict_audio_events(audio_data: np.ndarray, top_k: int = 5,
+                        threshold: float = 0.1) -> List[Dict]:
     """
-    音声データから音響イベントを予測
+    Predict audio events from audio data
 
     Args:
-        audio_data: 前処理済みの音声データ
-        top_k: 返す上位予測の数
-        threshold: 最小確率しきい値
+        audio_data: Preprocessed audio data
+        top_k: Number of top predictions to return
+        threshold: Minimum probability threshold
 
     Returns:
-        予測結果のリスト（フィルタリング・ラベル統合適用済み）
+        List of predicted events
     """
-    # 特徴抽出
+    # Extract features
     inputs = feature_extractor(
         audio_data,
         sampling_rate=feature_extractor.sampling_rate,
         return_tensors="pt"
     )
 
-    # デバイスに移動
+    # Move to device
     device = next(model.parameters()).device
     inputs = {k: v.to(device) for k, v in inputs.items()}
 
-    # 推論実行
+    # Run inference
     with torch.no_grad():
         outputs = model(**inputs)
         logits = outputs.logits
 
-    # Softmaxで確率に変換
+    # Convert to probabilities
     probs = torch.nn.functional.softmax(logits, dim=-1)[0]
 
-    # 上位k個を取得
+    # Get top-k predictions
     top_probs, top_indices = torch.topk(probs, min(top_k, len(probs)))
 
-    # 結果を整形
+    # Format results
     predictions = []
     for prob, idx in zip(top_probs.cpu(), top_indices.cpu()):
         score = prob.item()
-        if score >= threshold:  # しきい値以上のみ
+        if score >= threshold:
             label_id = idx.item()
             label = id2label.get(label_id) or id2label.get(str(label_id)) or f"Event_{label_id}"
             predictions.append({
@@ -327,51 +335,49 @@ def predict_audio_events(audio_data: np.ndarray, top_k: int = 5, threshold: floa
                 "score": round(score, 4)
             })
 
-    # Apply blacklist filtering and label merging
-    filtered_predictions = apply_event_filter(predictions)
+    # Apply event filtering (v2 feature)
+    predictions = apply_event_filter(predictions)
 
-    return filtered_predictions
+    return predictions
 
-def analyze_timeline(audio_data: np.ndarray, sample_rate: int, 
-                    segment_duration: float = 1.0, 
-                    overlap: float = 0.5,
+def analyze_timeline(audio_data: np.ndarray, sample_rate: int,
+                    segment_duration: float = 10.0,
+                    overlap: float = 0.0,
                     top_k: int = 3,
                     threshold: float = 0.1) -> Dict:
     """
-    音声データを時系列で分析
-    
+    Analyze audio data in timeline segments
+
     Args:
-        audio_data: 音声データ
-        sample_rate: サンプリングレート
-        segment_duration: セグメントの長さ（秒）
-        overlap: オーバーラップ率 (0-1)
-        top_k: 各時刻で返すイベント数
-        threshold: 最小確率しきい値
-    
+        audio_data: Audio data
+        sample_rate: Sampling rate
+        segment_duration: Segment length in seconds (default 10s)
+        overlap: Overlap ratio (0-1, default 0)
+        top_k: Number of events to return per segment
+        threshold: Minimum probability threshold
+
     Returns:
-        時系列分析結果
+        Timeline analysis results
     """
-    # 音声を前処理
+    # Preprocess audio
     processed_audio = process_audio(audio_data, sample_rate)
     target_sr = feature_extractor.sampling_rate
-    
-    # セグメント設定
+
+    # Segment configuration
     segment_samples = int(segment_duration * target_sr)
     hop_samples = int(segment_samples * (1 - overlap))
-    
-    # タイムライン結果を格納
+
+    # Store timeline results
     timeline = []
     all_events = {}
-    
-    # 音声が短い場合（segment_duration未満）は全体を1セグメントとして処理
+
+    # Handle short audio (less than segment_duration)
     if len(processed_audio) < segment_samples:
-        # 短い音声は全体を1つのセグメントとして処理
         events = predict_audio_events(processed_audio, top_k, threshold)
         timeline.append({
             "time": 0.0,
             "events": events
         })
-        # イベントの集計
         for event in events:
             label = event["label"]
             if label not in all_events:
@@ -379,29 +385,29 @@ def analyze_timeline(audio_data: np.ndarray, sample_rate: int,
             all_events[label]["count"] += 1
             all_events[label]["total_score"] += event["score"]
     else:
-        # 通常のセグメント処理
+        # Normal segment processing
         for i in range(0, len(processed_audio) - segment_samples + 1, hop_samples):
             segment = processed_audio[i:i + segment_samples]
             time_position = i / target_sr
-            
-            # セグメントの予測
+
+            # Predict events for segment
             events = predict_audio_events(segment, top_k, threshold)
-            
-            # タイムラインに追加
+
+            # Add to timeline
             timeline.append({
                 "time": round(time_position, 1),
                 "events": events
             })
-            
-            # イベントの集計
+
+            # Aggregate events
             for event in events:
                 label = event["label"]
                 if label not in all_events:
                     all_events[label] = {"count": 0, "total_score": 0}
                 all_events[label]["count"] += 1
                 all_events[label]["total_score"] += event["score"]
-    
-    # 最も頻繁なイベントを集計
+
+    # Get most common events
     most_common = []
     for label, stats in sorted(all_events.items(), key=lambda x: x[1]["count"], reverse=True)[:5]:
         most_common.append({
@@ -409,7 +415,7 @@ def analyze_timeline(audio_data: np.ndarray, sample_rate: int,
             "occurrences": stats["count"],
             "average_score": round(stats["total_score"] / stats["count"], 4)
         })
-    
+
     return {
         "timeline": timeline,
         "summary": {
@@ -421,82 +427,76 @@ def analyze_timeline(audio_data: np.ndarray, sample_rate: int,
         }
     }
 
-async def process_single_file(file_path: str, threshold: float = 0.1, top_k: int = 5,
-                             analyze_timeline_flag: bool = True, 
-                             segment_duration: float = 1.0,
-                             overlap: float = 0.5) -> Dict:
+async def process_single_file(file_path: str, threshold: float = 0.1, top_k: int = 3,
+                             analyze_timeline_flag: bool = True,
+                             segment_duration: float = 10.0,
+                             overlap: float = 0.0) -> Dict:
     """
     単一ファイルを処理（タイムライン形式で保存）
-    
-    Args:
-        file_path: S3ファイルパス
-        threshold: 最小確率しきい値
-        top_k: 返す上位予測の数
-        analyze_timeline_flag: タイムライン分析を実行するか（常にTrue推奨）
-        segment_duration: セグメントの長さ
-        overlap: オーバーラップ率
-    
-    Returns:
-        処理結果
     """
     temp_file = None
     try:
-        # ファイル情報を抽出
-        file_info = extract_info_from_file_path(file_path)
-        
+        # audio_filesテーブルからrecorded_atを取得
+        audio_file_response = supabase.table('audio_files') \
+            .select('device_id, recorded_at') \
+            .eq('file_path', file_path) \
+            .single() \
+            .execute()
+
+        if not audio_file_response.data:
+            return {"status": "error", "file_path": file_path, "error": "Audio file record not found"}
+
+        device_id = audio_file_response.data['device_id']
+        recorded_at = audio_file_response.data['recorded_at']
+
         # ステータスを処理中に更新
         await update_audio_files_status(file_path, 'processing')
-        
+
         # 一時ファイルを作成してダウンロード
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
             temp_file = tmp.name
-        
+
         if not download_from_s3(file_path, temp_file):
             await update_audio_files_status(file_path, 'error')
             return {"status": "error", "file_path": file_path, "error": "Download failed"}
-        
+
         # 音声データを読み込む
         audio_data, sample_rate = sf.read(temp_file)
         print(f"🎵 音声ロード完了: {len(audio_data)/sample_rate:.2f}秒, {sample_rate}Hz")
-        
-        # タイムライン分析を実行（必須）
+
+        # タイムライン分析を実行
         timeline_result = analyze_timeline(
             audio_data, sample_rate,
             segment_duration, overlap, top_k, threshold
         )
-        
-        # タイムライン形式のデータをbehavior_yamnetテーブルに保存
-        save_success = await save_to_behavior_yamnet(
-            file_info['device_id'],
-            file_info['date'],
-            file_info['time_block'],
-            timeline_result['timeline']  # タイムラインデータのみを保存
+
+        # spot_featuresテーブルに保存
+        save_success = await save_to_spot_features(
+            device_id,
+            recorded_at,
+            timeline_result['timeline']
         )
-        
+
         if save_success:
-            # ステータスを完了に更新
             await update_audio_files_status(file_path, 'completed')
-            
             return {
                 "status": "success",
                 "file_path": file_path,
-                "device_id": file_info['device_id'],
-                "date": file_info['date'],
-                "time_block": file_info['time_block'],
+                "device_id": device_id,
+                "recorded_at": recorded_at,
                 "timeline": timeline_result
             }
         else:
             await update_audio_files_status(file_path, 'error')
             return {"status": "error", "file_path": file_path, "error": "Save failed"}
-            
+
     except Exception as e:
         print(f"❌ ファイル処理エラー: {file_path} - {str(e)}")
         traceback.print_exc()
         await update_audio_files_status(file_path, 'error')
         return {"status": "error", "file_path": file_path, "error": str(e)}
-        
+
     finally:
-        # 一時ファイルを削除
         if temp_file and os.path.exists(temp_file):
             os.remove(temp_file)
 
@@ -507,25 +507,29 @@ async def startup_event():
 
 @app.get("/")
 async def root():
-    """ルートエンドポイント"""
+    """Root endpoint"""
     return {
-        "message": "AST Audio Event Detection API with Supabase Integration",
+        "message": "AST Audio Event Detection API with Supabase Integration (v2 with Event Filtering)",
         "model": MODEL_NAME,
-        "version": "2.0.0",
+        "version": "2.1.0",
+        "sampling_rate": f"{SAMPLING_RATE} Hz (16kHz)",
         "status": "ready" if model is not None else "not ready",
         "endpoints": {
             "/fetch-and-process-paths": "Process audio files from S3 via file paths",
-            "/health": "Health check endpoint"
+            "/health": "Health check endpoint",
+            "/filter-config": "Get event filter configuration"
         }
     }
 
 @app.get("/health")
 async def health_check():
-    """ヘルスチェックエンドポイント"""
+    """Health check endpoint"""
     filter_stats = get_filter_stats()
     return {
         "status": "healthy" if model is not None else "unhealthy",
         "model_loaded": model is not None,
+        "model_name": MODEL_NAME,
+        "sampling_rate": SAMPLING_RATE,
         "supabase_connected": supabase is not None,
         "s3_connected": s3_client is not None,
         "event_filtering": filter_stats
@@ -533,34 +537,30 @@ async def health_check():
 
 @app.get("/filter-config")
 async def get_filter_config():
-    """Get current event filtering configuration"""
+    """Get current event filter configuration"""
     return get_filter_stats()
 
 @app.post("/fetch-and-process-paths")
 async def fetch_and_process_paths(request: FetchAndProcessPathsRequest):
     """
-    file_pathsベースの音響イベント検出エンドポイント（Whisper APIパターン）
-    
+    file_pathsベースの音響イベント検出エンドポイント（v2完全互換）
+
     Args:
         request: file_paths配列とオプションパラメータ
-    
+
     Returns:
         処理結果のサマリーと詳細
     """
-    # モデルがロードされているか確認
-    if model is None or feature_extractor is None:
+    if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
-    
+
     start_time = time.time()
-    
-    # 処理結果を格納
+
     processed_files = []
     error_files = []
-    processed_time_blocks = set()
-    
+
     print(f"🚀 処理開始: {len(request.file_paths)}個のファイル")
-    
-    # 各ファイルを処理
+
     for file_path in request.file_paths:
         result = await process_single_file(
             file_path,
@@ -570,24 +570,21 @@ async def fetch_and_process_paths(request: FetchAndProcessPathsRequest):
             request.segment_duration,
             request.overlap
         )
-        
+
         if result["status"] == "success":
             processed_files.append(file_path)
-            processed_time_blocks.add(result["time_block"])
         else:
             error_files.append({
                 "file_path": file_path,
                 "error": result.get("error", "Unknown error")
             })
-    
-    # 実行時間を計算
+
     execution_time = time.time() - start_time
-    
-    # サマリーを作成
+
     total_files = len(request.file_paths)
     success_count = len(processed_files)
     error_count = len(error_files)
-    
+
     response = {
         "status": "success" if error_count == 0 else "partial",
         "summary": {
@@ -596,23 +593,22 @@ async def fetch_and_process_paths(request: FetchAndProcessPathsRequest):
             "errors": error_count
         },
         "processed_files": processed_files,
-        "processed_time_blocks": list(processed_time_blocks),
         "error_files": error_files if error_files else None,
         "execution_time_seconds": round(execution_time, 1),
         "message": f"{total_files}件中{success_count}件を正常に処理しました"
     }
-    
+
     print(f"✅ 処理完了: {success_count}/{total_files}件成功 (実行時間: {execution_time:.1f}秒)")
-    
+
     return JSONResponse(content=response)
 
 if __name__ == "__main__":
-    # サーバーを起動（ポート8017で動作）
     print("=" * 50)
     print("AST Audio Event Detection API with Supabase")
     print(f"Model: {MODEL_NAME}")
+    print(f"Sampling Rate: {SAMPLING_RATE} Hz (16kHz)")
     print("=" * 50)
-    
+
     uvicorn.run(
         app,
         host="127.0.0.1",
