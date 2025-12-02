@@ -122,7 +122,7 @@ jobs:
           
           # コンテナの状態確認
           echo "📊 Checking container status..."
-          docker ps | grep ast-api || echo "⚠️ Container not found"
+          docker ps | grep behavior-analysis-feature-extractor || echo "⚠️ Container not found"
           
           # ヘルスチェック
           echo "🏥 Running health check..."
@@ -137,7 +137,7 @@ jobs:
       if: success()
       run: |
         echo "🎉 Full CI/CD pipeline completed successfully!"
-        echo "📦 Service: ast-api"
+        echo "📦 Service: behavior-analysis-feature-extractor"
         echo "🌐 URL: https://api.hey-watch.me/behavior-features/"
         echo "🏷️ Version: ${{ github.sha }}"
     

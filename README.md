@@ -48,20 +48,16 @@ Audio Spectrogram Transformer (AST) を使用した音響イベント検出API�
 | └ **S3統合（重要）** | `/fetch-and-process-paths` | POST - Lambdaが呼ぶ |
 | | | |
 | **🐳 Docker/コンテナ** | | |
-| └ コンテナ名 | `ast-api` | `docker ps`で表示される名前 |
+| └ コンテナ名 | `behavior-analysis-feature-extractor` | `docker ps`で表示される名前 |
 | └ ポート（内部） | 8017 | コンテナ内 |
 | └ ポート（公開） | `127.0.0.1:8017:8017` | ローカルホストのみ |
 | └ ヘルスチェック | `/health` | Docker healthcheck |
+| └ 自動再起動 | `restart: always` | サーバー再起動時に自動起動 |
 | | | |
 | **☁️ AWS ECR** | | |
 | └ リポジトリ名 | `watchme-behavior-analysis-feature-extractor` | イメージ保存先 |
 | └ リージョン | ap-southeast-2 (Sydney) | |
 | └ URI | `754724220380.dkr.ecr.ap-southeast-2.amazonaws.com/watchme-behavior-analysis-feature-extractor:latest` | |
-| | | |
-| **⚙️ systemd** | | |
-| └ サービス名 | `watchme-behavior-yamnet.service` | ※名前が不統一 |
-| └ 起動コマンド | `docker-compose up -d` | |
-| └ 自動起動 | enabled | サーバー再起動時に自動起動 |
 | | | |
 | **📂 ディレクトリ** | | |
 | └ ソースコード | `/Users/kaya.matsumoto/projects/watchme/api/behavior-analysis/feature-extractor-v2` | ローカル |
@@ -470,7 +466,7 @@ lsof -i :8017
 - **本番環境**: EC2サーバー（3.24.16.82）で正常稼働中
 - **エンドポイント**: `https://api.hey-watch.me/behavior-features/`
 - **ポート**: **8017**（統一）
-- **コンテナ名**: `ast-api`
+- **コンテナ名**: `behavior-analysis-feature-extractor`
 - **ネットワーク**: `watchme-network`
 
 ### 🚀 自動デプロイ（CI/CD）- 推奨方法
@@ -560,10 +556,10 @@ ssh -i ~/watchme-key.pem ubuntu@3.24.16.82
 #### サービス管理
 ```bash
 # コンテナ状態確認
-docker ps | grep ast-api
+docker ps | grep behavior-analysis-feature-extractor
 
 # ログ確認
-docker logs ast-api --tail 50 -f
+docker logs behavior-analysis-feature-extractor --tail 50 -f
 
 # 再起動
 cd /home/ubuntu/behavior-analysis-feature-extractor
