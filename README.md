@@ -66,7 +66,7 @@ Audio Spectrogram Transformer (AST) を使用した音響イベント検出API�
 | **📂 ディレクトリ** | | |
 | └ ソースコード | `/Users/kaya.matsumoto/projects/watchme/api/behavior-analysis/feature-extractor-v2` | ローカル |
 | └ GitHubリポジトリ | `hey-watchme/api-sed-ast` | |
-| └ EC2配置場所 | `/home/ubuntu/api_ast` | |
+| └ EC2配置場所 | `/home/ubuntu/behavior-analysis-feature-extractor-v2` | |
 | | | |
 | **🔗 呼び出し元** | | |
 | └ Lambda関数 | `watchme-audio-worker` | 30分ごと |
@@ -466,7 +466,7 @@ lsof -i :8017
 2025年1月より、GitHub Actionsを使用した完全自動デプロイに移行しました。mainブランチへのプッシュで自動的にデプロイが実行されます。
 
 ### ✅ インフラ情報
-- **ECRリポジトリ**: `754724220380.dkr.ecr.ap-southeast-2.amazonaws.com/watchme-api-ast`
+- **ECRリポジトリ**: `754724220380.dkr.ecr.ap-southeast-2.amazonaws.com/watchme-behavior-analysis-feature-extractor`
 - **本番環境**: EC2サーバー（3.24.16.82）で正常稼働中
 - **エンドポイント**: `https://api.hey-watch.me/behavior-features/`
 - **ポート**: **8017**（統一）
@@ -522,8 +522,8 @@ graph LR
 - `EC2_USER`
 
 #### EC2側の設定
-- **アプリケーションディレクトリ**: `/home/ubuntu/api_ast`
-- **環境変数**: `/home/ubuntu/api_ast/.env`
+- **アプリケーションディレクトリ**: `/home/ubuntu/behavior-analysis-feature-extractor-v2`
+- **環境変数**: `/home/ubuntu/behavior-analysis-feature-extractor-v2/.env`
 - **デプロイスクリプト**: `./run-prod.sh`
 
 ### ⚠️ ポート設定の注意
@@ -543,7 +543,7 @@ CI/CDが利用できない場合の手動デプロイ方法：
 ssh -i ~/watchme-key.pem ubuntu@3.24.16.82
 
 # 2. アプリケーションディレクトリに移動
-cd /home/ubuntu/api_ast
+cd /home/ubuntu/behavior-analysis-feature-extractor-v2
 
 # 3. デプロイスクリプト実行
 ./run-prod.sh
@@ -566,7 +566,7 @@ docker ps | grep ast-api
 docker logs ast-api --tail 50 -f
 
 # 再起動
-cd /home/ubuntu/api_ast
+cd /home/ubuntu/behavior-analysis-feature-extractor-v2
 docker-compose -f docker-compose.prod.yml restart
 
 # ヘルスチェック
