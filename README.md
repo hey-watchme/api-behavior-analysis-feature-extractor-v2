@@ -65,8 +65,8 @@ Audio Spectrogram Transformer (AST) を使用した音響イベント検出API�
 | | | |
 | **📂 ディレクトリ** | | |
 | └ ソースコード | `/Users/kaya.matsumoto/projects/watchme/api/behavior-analysis/feature-extractor-v2` | ローカル |
-| └ GitHubリポジトリ | `hey-watchme/api-sed-ast` | |
-| └ EC2配置場所 | `/home/ubuntu/behavior-analysis-feature-extractor-v2` | |
+| └ GitHubリポジトリ | `hey-watchme/api-behavior-analysis-feature-extractor-v2` | |
+| └ EC2配置場所 | `/home/ubuntu/behavior-analysis-feature-extractor` | |
 | | | |
 | **🔗 呼び出し元** | | |
 | └ Lambda関数 | `watchme-audio-worker` | 30分ごと |
@@ -522,8 +522,8 @@ graph LR
 - `EC2_USER`
 
 #### EC2側の設定
-- **アプリケーションディレクトリ**: `/home/ubuntu/behavior-analysis-feature-extractor-v2`
-- **環境変数**: `/home/ubuntu/behavior-analysis-feature-extractor-v2/.env`
+- **アプリケーションディレクトリ**: `/home/ubuntu/behavior-analysis-feature-extractor`
+- **環境変数**: `/home/ubuntu/behavior-analysis-feature-extractor/.env`
 - **デプロイスクリプト**: `./run-prod.sh`
 
 ### ⚠️ ポート設定の注意
@@ -543,7 +543,7 @@ CI/CDが利用できない場合の手動デプロイ方法：
 ssh -i ~/watchme-key.pem ubuntu@3.24.16.82
 
 # 2. アプリケーションディレクトリに移動
-cd /home/ubuntu/behavior-analysis-feature-extractor-v2
+cd /home/ubuntu/behavior-analysis-feature-extractor
 
 # 3. デプロイスクリプト実行
 ./run-prod.sh
@@ -566,7 +566,7 @@ docker ps | grep ast-api
 docker logs ast-api --tail 50 -f
 
 # 再起動
-cd /home/ubuntu/behavior-analysis-feature-extractor-v2
+cd /home/ubuntu/behavior-analysis-feature-extractor
 docker-compose -f docker-compose.prod.yml restart
 
 # ヘルスチェック

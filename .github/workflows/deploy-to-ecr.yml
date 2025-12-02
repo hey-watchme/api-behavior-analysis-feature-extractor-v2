@@ -72,7 +72,7 @@ jobs:
         echo ""
         echo "📋 Next Steps:"
         echo "1. SSH to EC2: ssh -i ~/watchme-key.pem ubuntu@3.24.16.82"
-        echo "2. Deploy: cd /home/ubuntu/behavior-analysis-feature-extractor-v2 && ./run-prod.sh"
+        echo "2. Deploy: cd /home/ubuntu/behavior-analysis-feature-extractor && ./run-prod.sh"
 
     # ステップ7: エラー時の通知
     - name: Deploy Failure Notification
@@ -113,7 +113,7 @@ jobs:
         ssh ${EC2_USER}@${EC2_HOST} << 'ENDSSH'
           set -e
           echo "📦 Navigating to application directory..."
-          cd /home/ubuntu/behavior-analysis-feature-extractor-v2
+          cd /home/ubuntu/behavior-analysis-feature-extractor
           
           echo "🔄 Running deployment script..."
           ./run-prod.sh
