@@ -136,7 +136,9 @@ def extract_info_from_file_path(file_path: str) -> Dict[str, str]:
     if len(parts) >= 5:
         device_id = parts[1]
         date = parts[2]
-        time_block = parts[3]
+        time_block_raw = parts[3]  # e.g., "13-31-01"
+        # Convert HH-MM-SS to HH-MM format for database constraint
+        time_block = time_block_raw[:5]  # e.g., "13-31"
         return {
             'device_id': device_id,
             'date': date,
