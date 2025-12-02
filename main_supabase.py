@@ -335,10 +335,20 @@ def predict_audio_events(audio_data: np.ndarray, top_k: int = 5,
                 "score": round(score, 4)
             })
 
-    # Apply event filtering (v2 feature)
-    predictions = apply_event_filter(predictions)
+    # Debug: Log predictions before filtering
+    if predictions:
+        print(f"🔍 Before filter: {len(predictions)} events - {[p['label'] for p in predictions]}")
 
-    return predictions
+    # Apply event filtering (v2 feature)
+    filtered_predictions = apply_event_filter(predictions)
+
+    # Debug: Log filtering results
+    if predictions and not filtered_predictions:
+        print(f"⚠️ All {len(predictions)} events were filtered out")
+    elif len(predictions) != len(filtered_predictions):
+        print(f"🔧 Filtered: {len(predictions)} → {len(filtered_predictions)} events")
+
+    return filtered_predictions
 
 def analyze_timeline(audio_data: np.ndarray, sample_rate: int,
                     segment_duration: float = 10.0,
