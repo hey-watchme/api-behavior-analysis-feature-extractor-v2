@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: ast-api-local
+    ports:
+      - "8017:8017"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - AWS_REGION=${AWS_REGION}
+      - PYTHONUNBUFFERED=1
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8017/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

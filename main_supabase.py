@@ -22,7 +22,7 @@ import numpy as np
 import librosa
 import soundfile as sf
 from transformers import AutoFeatureExtractor, ASTForAudioClassification
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -59,6 +59,13 @@ if not supabase_url or not supabase_key:
 
 supabase: Client = create_client(supabase_url, supabase_key)
 print(f"✅ Supabase接続設定完了: {supabase_url}")
+
+# AWS SQSクライアントの初期化
+sqs = boto3.client('sqs', region_name='ap-southeast-2')
+FEATURE_COMPLETED_QUEUE_URL = os.environ.get(
+    'FEATURE_COMPLETED_QUEUE_URL',
+    'https://sqs.ap-southeast-2.amazonaws.com/754724220380/watchme-feature-completed-queue'
+)
 
 # AWS S3クライアントの初期化
 aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
@@ -539,6 +546,115 @@ async def health_check():
 async def get_filter_config():
     """Get current event filter configuration"""
     return get_filter_stats()
+
+# Request model for async processing
+class AsyncProcessRequest(BaseModel):
+    file_path: str
+    device_id: str
+    recorded_at: str
+
+@app.post("/async-process", status_code=202)
+async def async_process(
+    request: AsyncProcessRequest,
+    background_tasks: BackgroundTasks
+):
+    """Asynchronous processing endpoint - returns 202 Accepted immediately"""
+    print(f"Starting async processing for {request.device_id} at {request.recorded_at}")
+
+    # Update status to 'processing'
+    try:
+        update_status(request.device_id, request.recorded_at, "behavior_status", "processing")
+    except Exception as e:
+        print(f"Failed to update status: {e}")
+
+    # Add to background tasks
+    background_tasks.add_task(
+        process_in_background,
+        request.file_path,
+        request.device_id,
+        request.recorded_at
+    )
+
+    return {
+        "status": "accepted",
+        "message": "Processing started in background",
+        "device_id": request.device_id,
+        "recorded_at": request.recorded_at
+    }
+
+
+async def process_in_background(file_path: str, device_id: str, recorded_at: str):
+    """Background processing function"""
+    print(f"Background processing started for {device_id}")
+
+    try:
+        request = FetchAndProcessPathsRequest(file_paths=[file_path])
+        result = await fetch_and_process_paths(request)
+
+        update_status(device_id, recorded_at, "behavior_status", "completed")
+
+        sqs.send_message(
+            QueueUrl=FEATURE_COMPLETED_QUEUE_URL,
+            MessageBody=json.dumps({
+                "device_id": device_id,
+                "recorded_at": recorded_at,
+                "feature_type": "behavior",
+                "status": "completed",
+                "processed_files": result.get('processed_files', [])
+            })
+        )
+
+        print(f"Background processing completed for {device_id}")
+
+    except Exception as e:
+        print(f"Background processing failed for {device_id}: {str(e)}")
+
+        try:
+            update_status(device_id, recorded_at, "behavior_status", "failed")
+        except:
+            pass
+
+        sqs.send_message(
+            QueueUrl=FEATURE_COMPLETED_QUEUE_URL,
+            MessageBody=json.dumps({
+                "device_id": device_id,
+                "recorded_at": recorded_at,
+                "feature_type": "behavior",
+                "status": "failed",
+                "error": str(e)
+            })
+        )
+
+
+def update_status(device_id: str, recorded_at: str, status_field: str, status_value: str):
+    """Update processing status in spot_features table"""
+    try:
+        response = supabase.table('spot_features').update({
+            status_field: status_value,
+            'updated_at': datetime.utcnow().isoformat()
+        }).eq(
+            'device_id', device_id
+        ).eq(
+            'recorded_at', recorded_at
+        ).execute()
+
+        if response.data:
+            print(f"Status updated: {device_id}/{recorded_at} - {status_field}={status_value}")
+        else:
+            insert_data = {
+                'device_id': device_id,
+                'recorded_at': recorded_at,
+                status_field: status_value,
+                'created_at': datetime.utcnow().isoformat(),
+                'updated_at': datetime.utcnow().isoformat()
+            }
+            supabase.table('spot_features').insert(insert_data).execute()
+            print(f"Status record created: {device_id}/{recorded_at} - {status_field}={status_value}")
+
+    except Exception as e:
+        print(f"Failed to update status: {str(e)}")
+        raise
+
 
 @app.post("/fetch-and-process-paths")
 async def fetch_and_process_paths(request: FetchAndProcessPathsRequest):
