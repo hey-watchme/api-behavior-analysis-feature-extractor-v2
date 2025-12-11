@@ -35,7 +35,7 @@ Audio Spectrogram Transformer (AST) を使用した音響イベント検出API�
 | **📦 モデル** | AST v2.1 | Audio Spectrogram Transformer + Event Filtering |
 | | | |
 | **🌐 外部アクセス（Nginx）** | | |
-| └ 公開エンドポイント | `https://api.hey-watch.me/behavior-features/` | Lambdaから呼ばれるパス |
+| └ 公開エンドポイント | `https://api.hey-watch.me/behavior-analysis/features/` | Lambdaから呼ばれるパス |
 | └ Nginx設定ファイル | `/etc/nginx/sites-available/api.hey-watch.me` | 該当箇所を確認 |
 | └ proxy_pass先 | `http://localhost:8017/` | 内部転送先 |
 | └ タイムアウト | 180秒 | read/connect/send |
@@ -65,8 +65,8 @@ Audio Spectrogram Transformer (AST) を使用した音響イベント検出API�
 | └ EC2配置場所 | `/home/ubuntu/behavior-analysis-feature-extractor` | |
 | | | |
 | **🔗 呼び出し元** | | |
-| └ Lambda関数 | `watchme-audio-worker` | 30分ごと |
-| └ 呼び出しURL | `https://api.hey-watch.me/behavior-features/fetch-and-process-paths` | フルパス |
+| └ Lambda関数 | `watchme-sed-worker` | SQS: sed-queue |
+| └ 呼び出しURL | `https://api.hey-watch.me/behavior-analysis/features/async-process` | フルパス |
 | └ 環境変数 | `API_BASE_URL=https://api.hey-watch.me` | Lambda内 |
 
 ---
@@ -464,7 +464,7 @@ lsof -i :8017
 ### ✅ インフラ情報
 - **ECRリポジトリ**: `754724220380.dkr.ecr.ap-southeast-2.amazonaws.com/watchme-behavior-analysis-feature-extractor`
 - **本番環境**: EC2サーバー（3.24.16.82）で正常稼働中
-- **エンドポイント**: `https://api.hey-watch.me/behavior-features/`
+- **エンドポイント**: `https://api.hey-watch.me/behavior-analysis/features/`
 - **ポート**: **8017**（統一）
 - **コンテナ名**: `behavior-analysis-feature-extractor`
 - **ネットワーク**: `watchme-network`
@@ -494,7 +494,7 @@ git push origin main
 
 #### 3. デプロイ状況の確認
 - GitHub Actions: リポジトリの「Actions」タブで進捗確認
-- デプロイ完了後: `https://api.hey-watch.me/behavior-features/health`
+- デプロイ完了後: `https://api.hey-watch.me/behavior-analysis/features/health`
 
 ### 📋 CI/CDパイプラインの流れ
 
