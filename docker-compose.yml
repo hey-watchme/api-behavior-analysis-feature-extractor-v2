@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.prod
-    container_name: ast-api-local
+    container_name: behavior-analysis-feature-extractor-local
     ports:
       - "8017:8017"
     environment:
