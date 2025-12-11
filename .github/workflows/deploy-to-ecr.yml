@@ -113,8 +113,8 @@ jobs:
         ssh ${EC2_USER}@${EC2_HOST} << 'ENDSSH'
           set -e
           echo "📦 Navigating to application directory..."
-          cd /home/ubuntu/behavior-analysis-feature-extractor
-          
+          cd /home/ubuntu/behavior-analysis-feature-extractor-v2
+
           echo "🔄 Running deployment script..."
           ./run-prod.sh
           
