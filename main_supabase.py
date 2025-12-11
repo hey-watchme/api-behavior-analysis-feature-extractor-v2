@@ -588,8 +588,7 @@ async def process_in_background(file_path: str, device_id: str, recorded_at: str
         print(f"Failed to update status to processing: {e}")
 
     try:
-        request = FetchAndProcessPathsRequest(file_paths=[file_path])
-        result = await fetch_and_process_paths(request)
+        result = await process_single_file(file_path)
 
         update_status(device_id, recorded_at, "behavior_status", "completed")
 
@@ -599,8 +598,7 @@ async def process_in_background(file_path: str, device_id: str, recorded_at: str
                 "device_id": device_id,
                 "recorded_at": recorded_at,
                 "feature_type": "behavior",
-                "status": "completed",
-                "processed_files": result.get('processed_files', [])
+                "status": "completed"
             })
         )
 
