@@ -160,31 +160,6 @@ def extract_info_from_file_path(file_path: str) -> Dict[str, str]:
             'device_id': 'unknown'
         }
 
-async def update_audio_files_status(file_path: str, status: str = 'completed'):
-    """
-    audio_filesテーブルのbehavior_features_statusを更新
-
-    Args:
-        file_path: ファイルパス
-        status: ステータス ('pending', 'processing', 'completed', 'error')
-    """
-    try:
-        update_response = supabase.table('audio_files') \
-            .update({'behavior_features_status': status}) \
-            .eq('file_path', file_path) \
-            .execute()
-
-        if update_response.data:
-            print(f"✅ ステータス更新成功: {file_path} -> {status}")
-            return True
-        else:
-            print(f"⚠️ 対象レコードが見つかりません: {file_path}")
-            return False
-
-    except Exception as e:
-        print(f"❌ ステータス更新エラー: {str(e)}")
-        return False
-
 async def save_to_spot_features(device_id: str, recorded_at: str,
                                  timeline_data: List[Dict]):
     """
@@ -456,15 +431,11 @@ async def process_single_file(file_path: str, threshold: float = 0.1, top_k: int
         device_id = audio_file_response.data['device_id']
         recorded_at = audio_file_response.data['recorded_at']
 
-        # ステータスを処理中に更新
-        await update_audio_files_status(file_path, 'processing')
-
         # 一時ファイルを作成してダウンロード
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
             temp_file = tmp.name
 
         if not download_from_s3(file_path, temp_file):
-            await update_audio_files_status(file_path, 'error')
             return {"status": "error", "file_path": file_path, "error": "Download failed"}
 
         # 音声データを読み込む
@@ -485,7 +456,6 @@ async def process_single_file(file_path: str, threshold: float = 0.1, top_k: int
         )
 
         if save_success:
-            await update_audio_files_status(file_path, 'completed')
             return {
                 "status": "success",
                 "file_path": file_path,
@@ -494,13 +464,11 @@ async def process_single_file(file_path: str, threshold: float = 0.1, top_k: int
                 "timeline": timeline_result
             }
         else:
-            await update_audio_files_status(file_path, 'error')
             return {"status": "error", "file_path": file_path, "error": "Save failed"}
 
     except Exception as e:
         print(f"❌ ファイル処理エラー: {file_path} - {str(e)}")
         traceback.print_exc()
-        await update_audio_files_status(file_path, 'error')
         return {"status": "error", "file_path": file_path, "error": str(e)}
 
     finally:
